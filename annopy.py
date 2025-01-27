@@ -51,10 +51,16 @@ class MaxHeap:
     def __bool__(self):
         return bool(self._heap)
 
+    def __iter__(self):
+        # Create a copy of the heap to avoid modifying the original
+        heap_copy = self._heap.copy()
+        # Sort the copy by priority (remember, our Item class handles comparison)
+        return iter([(item.priority, item.value) for item in sorted(heap_copy)])
 
 class SearchStrategy(Enum):
     SCORE_BASED = "score"
     PRIORITY_QUEUE = "priority"
+    PRIORITY_QUEUE_HEAPQ = "priority_heapq"
 
 class AnnoyNode:
     def __init__(self):
@@ -272,8 +278,55 @@ class Annoy:
     
         # Return the n_neighbors closest points
         # We sort again because heap order alone doesn't guarantee final order
-        return sorted(heap)[:n_neighbors]
+        # Convert heap to list of (index, distance) pairs and sort
+        results = [(idx, dist) for dist, idx in heap]
+        return sorted(results, key=lambda x: x[1])[:n_neighbors]
     
+    def _priority_queue_heapq_search(self, query: np.ndarray, n_neighbors: int) -> List[Tuple[int, float]]:
+        """
+        Perform nearest neighbor search using Python's heapq with negation.
+        
+        This method implements the same priority queue approach but uses heapq directly
+        with negative distances to create a max-heap behavior. This provides a simpler
+        implementation compared to the custom MaxHeap class.
+        
+        Args:
+            query: The query point we're searching for neighbors of
+            n_neighbors: Number of nearest neighbors to return
+            
+        Returns:
+            List of (index, distance) tuples for the nearest neighbors,
+            sorted by distance (closest first)
+        """
+        heap = []  # Will store (-distance, index) tuples
+        seen: Set[int] = set()
+        
+        # Search through each tree
+        for tree in self.trees:
+            candidates = self._search_tree(tree, query, n_neighbors)
+            
+            for idx, dist in candidates:
+                if idx not in seen:
+                    if len(heap) >= n_neighbors * 2:
+                        # Note: heap[0] gives us the most negative distance
+                        worst_dist = -heap[0][0]
+                        if dist >= worst_dist:
+                            continue
+                    
+                    # Store negative distance for max-heap behavior
+                    heapq.heappush(heap, (-dist, idx))
+                    seen.add(idx)
+                    
+                    if len(heap) > n_neighbors * 2:
+                        heapq.heappop(heap)
+            
+            if len(seen) >= n_neighbors * 10:
+                break
+        
+        # Convert back to positive distances and sort
+        results = [(-dist, idx) for dist, idx in heap]
+        return [(idx, dist) for dist, idx in sorted(results)][:n_neighbors]
+
     def search(self, query: np.ndarray, n_neighbors: int = 1, 
                strategy: SearchStrategy = SearchStrategy.PRIORITY_QUEUE) -> List[Tuple[int, float]]:
         """
@@ -292,5 +345,7 @@ class Annoy:
             
         if strategy == SearchStrategy.SCORE_BASED:
             return self._score_based_search(query, n_neighbors)
-        else:
+        elif strategy == SearchStrategy.PRIORITY_QUEUE:
             return self._priority_queue_search(query, n_neighbors)
+        else:
+            return self._priority_queue_heapq_search(query, n_neighbors)
