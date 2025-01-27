@@ -4,6 +4,54 @@ import heapq
 from collections import defaultdict
 from typing import List, Tuple, Dict, Optional, Set
 
+class MaxHeap:
+    """
+    A max-heap implementation that wraps Python's heapq module.
+    
+    This class provides max-heap behavior while using Python's min-heap under the hood.
+    Instead of negating numbers, we implement comparison methods to reverse the ordering.
+    """
+    class Item:
+        def __init__(self, priority, value):
+            self.priority = priority  # The priority (distance in our case)
+            self.value = value       # The value (index in our case)
+            
+        def __lt__(self, other):
+            # Reverse comparison for max-heap behavior
+            return self.priority > other.priority
+        
+        def __eq__(self, other):
+            return self.priority == other.priority
+            
+        def __repr__(self):
+            return f"Item(priority={self.priority}, value={self.value})"
+    
+    def __init__(self):
+        self._heap = []
+    
+    def push(self, priority, value):
+        """Add an item to the heap."""
+        heapq.heappush(self._heap, self.Item(priority, value))
+    
+    def pop(self):
+        """Remove and return the (priority, value) pair with highest priority."""
+        item = heapq.heappop(self._heap)
+        return item.priority, item.value
+    
+    def peek(self):
+        """Return the (priority, value) pair with highest priority without removing it."""
+        if not self._heap:
+            raise IndexError("Heap is empty")
+        item = self._heap[0]
+        return item.priority, item.value
+    
+    def __len__(self):
+        return len(self._heap)
+    
+    def __bool__(self):
+        return bool(self._heap)
+
+
 class SearchStrategy(Enum):
     SCORE_BASED = "score"
     PRIORITY_QUEUE = "priority"
@@ -186,8 +234,8 @@ class Annoy:
             - Points further than the 4th best distance are skipped
             - Final result will be the 2 closest points found
         """
-        # Initialize priority queue (min-heap) and set of seen indices
-        heap = []  # Will store (distance, index) tuples
+        # Initialize priority queue (max-heap) and set of seen indices
+        heap = MaxHeap()  # Will store (distance, index) tuples
         seen: Set[int] = set()  # Track indices we've already processed
     
         # Search through each tree in our forest
@@ -202,21 +250,21 @@ class Annoy:
                     # Check if heap is at capacity (2 * n_neighbors)
                     if len(heap) >= n_neighbors * 2:
                         # Get the worst distance in our current set of candidates
-                        worst_dist, _ = heap[0]  # Heap[0] is the smallest value in the min-heap
+                        worst_dist, _ = heap.peek()  # Now directly gives us worst distance
                         
                         # Early pruning: skip points that are definitely too far away
                         if dist > worst_dist:
                             continue  # This point can't be in our final n_neighbors
                     
                     # Add new candidate to priority queue
-                    heapq.heappush(heap, (dist, idx))
+                    heap.push(dist, idx)
                     seen.add(idx)
                     
                     # Maintain heap size bound of 2 * n_neighbors
                     if len(heap) > n_neighbors * 2:
                         # Remove the closest point (remember this is a min-heap)
                         # We remove closest because we want to keep track of the worst distance
-                        heapq.heappop(heap)
+                        heap.pop()
             
             # No need to process all trees if we have enough good candidates
             if len(seen) >= n_neighbors * 10:  # Arbitrary threshold, can be tuned
